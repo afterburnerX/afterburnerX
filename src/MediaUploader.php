@@ -47,22 +47,31 @@ class MediaUploader
 
         $filename = bin2hex(random_bytes(16)) . '.' . $extension;
 
+        if (strtolower((string) env('STORAGE_DRIVER', 'local')) === 's3') {
+            return S3Uploader::upload($file['tmp_name'], $filename, $mime);
+        }
+
+        return self::storeLocally($file['tmp_name'], $filename);
+    }
+
+    public static function allowedExtensionForMime(string $mime): ?string
+    {
+        return self::ALLOWED_MIME_TO_EXT[$mime] ?? null;
+    }
+
+    private static function storeLocally(string $tmpPath, string $filename): string
+    {
         $uploadDir = BASE_PATH . '/public/uploads';
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
             throw new RuntimeException('Upload directory is not available.');
         }
 
         $destination = $uploadDir . '/' . $filename;
-        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+        if (!move_uploaded_file($tmpPath, $destination)) {
             throw new RuntimeException('Could not save uploaded file.');
         }
 
         return self::publicBaseUrl() . '/uploads/' . $filename;
-    }
-
-    public static function allowedExtensionForMime(string $mime): ?string
-    {
-        return self::ALLOWED_MIME_TO_EXT[$mime] ?? null;
     }
 
     private static function publicBaseUrl(): string

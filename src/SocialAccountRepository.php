@@ -91,4 +91,35 @@ class SocialAccountRepository
 
         return $expiresAt ?: null;
     }
+
+    /**
+     * Facebook connections expiring within the given number of days (or
+     * already expired) that haven't already been notified for their
+     * current expiry date - reconnecting resets expiry_notified_for
+     * because it gets a new token_expires_at, so the check naturally
+     * re-arms itself instead of needing to be cleared manually.
+     */
+    public static function facebookAccountsNeedingExpiryReminder(int $withinDays): array
+    {
+        $db = Database::connection();
+        $stmt = $db->prepare(
+            "SELECT sa.id, sa.token_expires_at, u.email, u.name
+             FROM social_accounts sa
+             JOIN users u ON u.id = sa.user_id
+             WHERE sa.provider = 'facebook'
+               AND sa.token_expires_at IS NOT NULL
+               AND sa.token_expires_at <= DATE_ADD(NOW(), INTERVAL ? DAY)
+               AND (sa.expiry_notified_for IS NULL OR sa.expiry_notified_for <> sa.token_expires_at)"
+        );
+        $stmt->execute([$withinDays]);
+
+        return $stmt->fetchAll();
+    }
+
+    public static function markExpiryNotified(int $socialAccountId, string $tokenExpiresAt): void
+    {
+        $db = Database::connection();
+        $stmt = $db->prepare('UPDATE social_accounts SET expiry_notified_for = ? WHERE id = ?');
+        $stmt->execute([$tokenExpiresAt, $socialAccountId]);
+    }
 }

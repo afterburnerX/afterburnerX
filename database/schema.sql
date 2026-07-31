@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS social_accounts (
   fb_user_id VARCHAR(64) NOT NULL,
   access_token TEXT NOT NULL,
   token_expires_at DATETIME NULL,
+  expiry_notified_for DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_user_provider (user_id, provider),
   CONSTRAINT fk_social_accounts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

@@ -19,11 +19,12 @@ and raw cURL for the Meta Graph API and Claude API calls.
 ## Project layout
 
 ```
-config/bootstrap.php     Env loading, session start, autoloader
-src/                      Application classes (App\ namespace)
-public/                   Web root — point your vhost/docroot here
-cron/run_scheduler.php    Publishes due scheduled posts (run every minute)
-database/schema.sql       MySQL schema
+config/bootstrap.php               Env loading, session start, autoloader
+src/                                Application classes (App\ namespace)
+public/                             Web root — point your vhost/docroot here
+cron/run_scheduler.php              Publishes due scheduled posts (run every minute)
+cron/send_expiry_reminders.php      Emails users with an expiring Facebook connection (run daily)
+database/schema.sql                 MySQL schema
 ```
 
 ## Setup
@@ -52,7 +53,12 @@ database/schema.sql       MySQL schema
    ```
    * * * * * php /full/path/to/afterburnerX/cron/run_scheduler.php >> /full/path/to/afterburnerX/storage/scheduler.log 2>&1
    ```
-   Create the `storage/` directory if you want file logging.
+
+5. **Expiry-reminder cron** (once a day):
+   ```
+   0 9 * * * php /full/path/to/afterburnerX/cron/send_expiry_reminders.php >> /full/path/to/afterburnerX/storage/mail.log 2>&1
+   ```
+   Create the `storage/` directory if you want file logging for either cron job.
 
 ## Setting up the Facebook app (required before anything can post)
 
@@ -99,6 +105,45 @@ database/schema.sql       MySQL schema
 (`ANTHROPIC_API_KEY`) and stores each response so users can browse past
 suggestions.
 
+## Email reminders
+
+`cron/send_expiry_reminders.php` (run daily) emails any user whose
+Facebook connection is within 7 days of expiring, or already has. It
+tracks `social_accounts.expiry_notified_for` so each user gets exactly
+one email per expiry date — reconnecting gets a new `token_expires_at`,
+which naturally re-arms the reminder for the new expiry.
+
+No PHPMailer/Symfony Mailer dependency: `App\Mailer` is a small
+hand-rolled SMTP client (EHLO/STARTTLS/AUTH LOGIN/MAIL FROM/RCPT
+TO/DATA over a raw socket) that's used if `SMTP_HOST` is set in `.env`,
+and falls back to PHP's `mail()` otherwise. Point `SMTP_HOST` at any
+standard SMTP provider (SES, Mailgun, Postmark, your own Postfix, etc.)
+— nothing provider-specific is assumed.
+
+## Upload storage
+
+`STORAGE_DRIVER` in `.env` controls where uploaded post images go:
+
+- `local` (default) — saved under `public/uploads/`, served from this
+  server. Simplest option, fine until you run more than one app server.
+- `s3` — uploaded straight to any S3-compatible object store (AWS S3,
+  Cloudflare R2, DigitalOcean Spaces, MinIO, ...) via `App\S3Uploader`,
+  a small hand-rolled AWS Signature Version 4 signer over cURL — no AWS
+  SDK dependency. Configure `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+  `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and optionally
+  `S3_PATH_STYLE` / `S3_PUBLIC_URL_BASE` (e.g. to point at a CDN domain
+  in front of the bucket). Objects are uploaded `public-read` since the
+  Graph API needs to be able to fetch the image URL directly.
+
+  The SigV4 signing math (`S3Uploader::signingKey()`) is verified in
+  `tests/` against an independently-computed HMAC-SHA256 chain, but the
+  actual PUT-to-a-real-bucket path has **not** been exercised against a
+  live S3-compatible endpoint in this environment (no such service was
+  reachable to test against). Try it against a real bucket — including
+  the exact provider you plan to use, since path-style vs
+  virtual-hosted-style bucket URLs vary — before relying on it in
+  production.
+
 ## Running tests
 
 ```bash
@@ -117,7 +162,7 @@ that needs a real database or live Facebook/Claude credentials.
 
 ## Known limitations / next steps
 
-- Token-expiry warning is shown in-app only — no email/push reminder when a connection is about to expire.
 - No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
-- Uploaded images are stored on local disk under `public/uploads/` — fine for a single server, but move to object storage (S3-compatible) before scaling to multiple app servers.
+- The S3 upload path is unverified against a real bucket — see the warning under "Upload storage" above.
 - Test coverage is limited to pure logic — no integration tests against a real (or in-memory) database yet.
+- `App\Mailer`'s SMTP client handles the common EHLO/STARTTLS/AUTH LOGIN path but hasn't been tested against every provider's quirks (e.g. providers requiring AUTH PLAIN instead of AUTH LOGIN) — verify against your chosen provider, or point `SMTP_HOST` at a well-known relay (SES, Mailgun, Postmark) that supports AUTH LOGIN.
