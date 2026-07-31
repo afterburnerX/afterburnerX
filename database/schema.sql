@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   media_url VARCHAR(500) NULL,
   link VARCHAR(500) NULL,
   scheduled_at DATETIME NOT NULL,
-  status ENUM('pending','posted','failed') NOT NULL DEFAULT 'pending',
+  status ENUM('pending','posted','failed','canceled') NOT NULL DEFAULT 'pending',
   remote_post_id VARCHAR(120) NULL,
   error_message TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

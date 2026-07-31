@@ -81,6 +81,10 @@ input, textarea, select {
 .badge-pending { background: #3a331f; color: #ffdf9a; }
 .badge-posted { background: #1f3a26; color: #b4ffcb; }
 .badge-failed { background: #3a1f1f; color: #ffb4b4; }
+.badge-canceled { background: #262a33; color: var(--muted); }
+
+.table form { margin: 0; }
+.table .btn { padding: 4px 10px; font-size: 0.85rem; margin: 0; }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }

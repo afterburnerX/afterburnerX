@@ -69,4 +69,18 @@ class PostRepository
         $stmt = $db->prepare('UPDATE scheduled_posts SET status = "failed", error_message = ? WHERE id = ?');
         $stmt->execute([$error, $id]);
     }
+
+    /**
+     * Cancels a still-pending scheduled post. Silently no-ops if the post
+     * doesn't belong to the user or has already been published/failed, so
+     * the scheduler can never race a cancel into publishing a canceled post.
+     */
+    public static function cancel(int $id, int $userId): void
+    {
+        $db = Database::connection();
+        $stmt = $db->prepare(
+            'UPDATE scheduled_posts SET status = "canceled" WHERE id = ? AND user_id = ? AND status = "pending"'
+        );
+        $stmt->execute([$id, $userId]);
+    }
 }

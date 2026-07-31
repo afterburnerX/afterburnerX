@@ -32,6 +32,9 @@ database/schema.sql       MySQL schema
    ```bash
    mysql -u root -p < database/schema.sql
    ```
+   If you already ran `schema.sql` from an earlier checkout, apply new
+   changes from `database/migrations/` in filename order instead of
+   re-running the whole schema.
 
 2. **Config**
    ```bash
