@@ -1,0 +1,101 @@
+# AfterburnerX
+
+A small PHP + MySQL platform where users create an account, connect their
+Facebook Page (and its linked Instagram Business account), then post to
+both immediately or on a schedule, and get AI-generated advertising
+suggestions for their business.
+
+Plain PHP (no framework, no Composer dependencies) so it runs on any
+standard LAMP/LEMP host. Uses PDO/MySQLi-compatible PDO for the database
+and raw cURL for the Meta Graph API and Claude API calls.
+
+## Stack
+
+- PHP 8.1+ (PDO MySQL, cURL, OpenSSL extensions)
+- MySQL 5.7+ / MariaDB 10.3+
+- Apache with `mod_rewrite`/`mod_authz_core` (for the included `.htaccess`), or equivalent Nginx config
+- A cron runner for the scheduler worker
+
+## Project layout
+
+```
+config/bootstrap.php     Env loading, session start, autoloader
+src/                      Application classes (App\ namespace)
+public/                   Web root — point your vhost/docroot here
+cron/run_scheduler.php    Publishes due scheduled posts (run every minute)
+database/schema.sql       MySQL schema
+```
+
+## Setup
+
+1. **Database**
+   ```bash
+   mysql -u root -p < database/schema.sql
+   ```
+
+2. **Config**
+   ```bash
+   cp .env.example .env
+   ```
+   Fill in `DB_*`, `FB_APP_ID`, `FB_APP_SECRET`, `FB_REDIRECT_URI`, and
+   `ANTHROPIC_API_KEY`.
+
+3. **Web server document root** → point it at `public/`. If your host
+   can't change the docroot, the root `.htaccess` denies direct access to
+   `src/`, `config/`, and `.env` as a fallback (Apache only — for Nginx
+   add an equivalent `location` block denying everything outside `/public`).
+
+4. **Scheduler cron** (every minute):
+   ```
+   * * * * * php /full/path/to/afterburnerX/cron/run_scheduler.php >> /full/path/to/afterburnerX/storage/scheduler.log 2>&1
+   ```
+   Create the `storage/` directory if you want file logging.
+
+## Setting up the Facebook app (required before anything can post)
+
+1. Create an app at [developers.facebook.com](https://developers.facebook.com/) → type **Business**.
+2. Add the **Facebook Login** product. Under its settings, add your exact
+   callback URL to **Valid OAuth Redirect URIs**:
+   `https://yourdomain.com/facebook-callback.php`
+3. Add the **Instagram** product if you want IG publishing (Instagram
+   posting works through a Facebook Page's linked Instagram Business
+   Account — there's no separate IG-only login in this app).
+4. In **App Review → Permissions and Features**, request:
+   - `pages_show_list`
+   - `pages_read_engagement`
+   - `pages_manage_posts`
+   - `instagram_basic`
+   - `instagram_content_publish`
+   - `business_management`
+
+   Until these are approved, the app only works with users added as
+   **Testers/Developers/Admins** on the app (Roles tab) — fine for
+   building and testing, not for the public.
+5. **Business verification**: Meta requires this before granting the
+   permissions above for public use. You'll need a live privacy policy
+   URL, terms of service, and often a screencast showing the exact
+   OAuth → connect → post flow. Budget real calendar time for this step —
+   it's typically the slowest part of shipping, not the code.
+6. Facebook user tokens exchanged via `longLivedToken()` last ~60 days;
+   there's no refresh token, so users will periodically need to
+   reconnect (click "Reconnect" on the dashboard) — this app doesn't
+   silently re-auth for them.
+
+## How posting works
+
+- **Immediate**: `compose.php` calls `PostPublisher::publish()` synchronously and shows success/failure right away.
+- **Scheduled**: the same row is written with `status = 'pending'` and a future `scheduled_at`; `cron/run_scheduler.php` polls every minute for due rows and calls the same `PostPublisher::publish()`.
+- **Instagram**: always a two-step Graph API call — create a media container from an image URL, then publish it. Only image URLs are supported (no local file upload in this MVP); host images somewhere publicly reachable and paste the URL.
+
+## AI suggestions
+
+`suggestions.php` sends the business description + goal to the Claude API
+(`ANTHROPIC_API_KEY`) and stores each response so users can browse past
+suggestions.
+
+## Known limitations / next steps
+
+- No image upload — Instagram/Facebook photo posts take a public URL, not a file.
+- No token-refresh reminders/emails when a connection is about to expire.
+- No multi-tenant rate limiting against Meta's API limits.
+- No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
