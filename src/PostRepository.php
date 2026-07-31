@@ -6,6 +6,11 @@ namespace App;
 
 class PostRepository
 {
+    /** After this many failed attempts, a transient error is treated as permanent. */
+    public const MAX_ATTEMPTS = 6;
+
+    private const BACKOFF_SECONDS = [1 => 120, 2 => 300, 3 => 900, 4 => 1800, 5 => 3600];
+
     public static function schedule(
         int $userId,
         int $pageId,
@@ -49,6 +54,7 @@ class PostRepository
              FROM scheduled_posts sp
              JOIN pages p ON p.id = sp.page_id
              WHERE sp.status = "pending" AND sp.scheduled_at <= NOW()
+               AND (sp.next_attempt_at IS NULL OR sp.next_attempt_at <= NOW())
              ORDER BY sp.scheduled_at ASC LIMIT 50'
         );
         $stmt->execute();
@@ -59,7 +65,9 @@ class PostRepository
     public static function markPosted(int $id, string $remotePostId): void
     {
         $db = Database::connection();
-        $stmt = $db->prepare('UPDATE scheduled_posts SET status = "posted", remote_post_id = ?, error_message = NULL WHERE id = ?');
+        $stmt = $db->prepare(
+            'UPDATE scheduled_posts SET status = "posted", remote_post_id = ?, error_message = NULL WHERE id = ?'
+        );
         $stmt->execute([$remotePostId, $id]);
     }
 
@@ -68,6 +76,32 @@ class PostRepository
         $db = Database::connection();
         $stmt = $db->prepare('UPDATE scheduled_posts SET status = "failed", error_message = ? WHERE id = ?');
         $stmt->execute([$error, $id]);
+    }
+
+    /**
+     * Records a transient (rate limit / network) failure and schedules a
+     * later retry with backoff, keeping the post "pending" so the
+     * scheduler picks it up again automatically. Once MAX_ATTEMPTS is
+     * exceeded it's marked permanently failed instead.
+     */
+    public static function markTransientFailure(int $id, int $priorAttempts, string $error): void
+    {
+        $attempts = $priorAttempts + 1;
+
+        if ($attempts >= self::MAX_ATTEMPTS) {
+            self::markFailed($id, "Gave up after {$attempts} attempts: {$error}");
+            return;
+        }
+
+        $delay = self::BACKOFF_SECONDS[$attempts] ?? 3600;
+
+        $db = Database::connection();
+        $stmt = $db->prepare(
+            'UPDATE scheduled_posts
+             SET attempts = ?, next_attempt_at = DATE_ADD(NOW(), INTERVAL ? SECOND), error_message = ?
+             WHERE id = ?'
+        );
+        $stmt->execute([$attempts, $delay, $error, $id]);
     }
 
     /**

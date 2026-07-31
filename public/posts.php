@@ -37,6 +37,11 @@ $posts = PostRepository::forUser(Auth::id());
             <span class="badge badge-<?= htmlspecialchars($post['status']) ?>"><?= htmlspecialchars($post['status']) ?></span>
             <?php if ($post['status'] === 'failed' && $post['error_message']): ?>
               <div class="muted small"><?= htmlspecialchars($post['error_message']) ?></div>
+            <?php elseif ($post['status'] === 'pending' && (int) $post['attempts'] > 0): ?>
+              <div class="muted small">
+                Rate-limited, retry <?= (int) $post['attempts'] ?>/<?= \App\PostRepository::MAX_ATTEMPTS ?>
+                <?php if ($post['next_attempt_at']): ?> — next try <?= htmlspecialchars($post['next_attempt_at']) ?><?php endif; ?>
+              </div>
             <?php endif; ?>
           </td>
           <td>

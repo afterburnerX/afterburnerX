@@ -7,6 +7,7 @@ use App\SocialAccountRepository;
 use App\PostRepository;
 use App\PostPublisher;
 use App\MediaUploader;
+use App\TransientApiException;
 
 Auth::requireLogin();
 
@@ -70,6 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                     PostRepository::markPosted($postId, $remoteId);
                     $success = 'Posted immediately!';
+                } catch (TransientApiException $e) {
+                    PostRepository::markTransientFailure($postId, 0, $e->getMessage());
+                    $success = "Facebook is rate-limiting requests right now, so this post was queued — it'll retry "
+                        . 'automatically and you can track it on the Scheduled Posts page.';
                 } catch (\Throwable $e) {
                     PostRepository::markFailed($postId, $e->getMessage());
                     $error = 'Post failed: ' . $e->getMessage();

@@ -134,7 +134,35 @@ class FacebookClient
         ]);
     }
 
+    /** Graph API error codes that mean "rate limited", not "your request is wrong". */
+    private const RATE_LIMIT_CODES = [4, 17, 32, 613];
+
+    /** Quick in-process retries for blips, before handing off to the caller's own backoff. */
+    private const MAX_QUICK_RETRIES = 2;
+    private const QUICK_RETRY_DELAY_SECONDS = [1, 3];
+
     private function request(string $method, string $path, array $params = []): array
+    {
+        $attempt = 0;
+
+        while (true) {
+            try {
+                return $this->attemptRequest($method, $path, $params);
+            } catch (TransientApiException $e) {
+                if ($attempt >= self::MAX_QUICK_RETRIES) {
+                    throw $e;
+                }
+                sleep(self::QUICK_RETRY_DELAY_SECONDS[$attempt] ?? 3);
+                $attempt++;
+            }
+        }
+    }
+
+    /**
+     * @throws TransientApiException for rate limits / network blips (retryable)
+     * @throws RuntimeException for everything else (not worth retrying)
+     */
+    private function attemptRequest(string $method, string $path, array $params): array
     {
         $url = self::GRAPH_URL . $path;
 
@@ -157,7 +185,7 @@ class FacebookClient
         if ($response === false) {
             $error = curl_error($ch);
             curl_close($ch);
-            throw new RuntimeException('Facebook API request failed: ' . $error);
+            throw new TransientApiException('Facebook API request failed: ' . $error);
         }
 
         curl_close($ch);
@@ -165,7 +193,14 @@ class FacebookClient
         $decoded = json_decode($response, true);
 
         if (is_array($decoded) && isset($decoded['error'])) {
-            $message = $decoded['error']['message'] ?? 'Unknown Facebook API error';
+            $err = $decoded['error'];
+            $message = $err['message'] ?? 'Unknown Facebook API error';
+            $code = $err['code'] ?? null;
+
+            if (!empty($err['is_transient']) || in_array($code, self::RATE_LIMIT_CODES, true)) {
+                throw new TransientApiException('Facebook API rate limit: ' . $message);
+            }
+
             throw new RuntimeException('Facebook API error: ' . $message);
         }
 

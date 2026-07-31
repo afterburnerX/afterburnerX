@@ -49,11 +49,13 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   status ENUM('pending','posted','failed','canceled') NOT NULL DEFAULT 'pending',
   remote_post_id VARCHAR(120) NULL,
   error_message TEXT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  next_attempt_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_scheduled_posts_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_scheduled_posts_page FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
-  INDEX idx_due (status, scheduled_at)
+  INDEX idx_due (status, scheduled_at, next_attempt_at)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS ai_suggestions (

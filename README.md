@@ -90,6 +90,8 @@ database/schema.sql       MySQL schema
 - **Scheduled**: the same row is written with `status = 'pending'` and a future `scheduled_at`; `cron/run_scheduler.php` polls every minute for due rows and calls the same `PostPublisher::publish()`.
 - **Instagram**: always a two-step Graph API call — create a media container from an image URL, then publish it. The Graph API needs a URL it can fetch, so `compose.php` accepts either an uploaded image (saved under `public/uploads/`, served back as a public URL) or a pasted image URL. Set `APP_URL` in `.env` if the app runs behind a proxy/load balancer so uploaded-file URLs are built correctly.
 - **Token health**: the dashboard warns when the connected Facebook account's long-lived token is within 7 days of expiring (or already expired) and links to reconnect. There's still no automatic refresh — Meta doesn't issue one — so this is a manual "click to reconnect" flow, not silent renewal.
+- **Cancel**: pending scheduled posts can be canceled from `posts.php` any time before they publish.
+- **Rate limits**: `FacebookClient` treats Graph API rate-limit errors (codes 4/17/32/613, or `is_transient`) and network blips as retryable — 2 quick in-process retries first, then the post is left `pending` with an exponential backoff (2m → 5m → 15m → 30m → 60m) so the cron worker retries it automatically, up to `PostRepository::MAX_ATTEMPTS` (6) before it's marked permanently failed. An immediate "post now" that hits a rate limit falls back to this same queued retry instead of just failing.
 
 ## AI suggestions
 
@@ -100,6 +102,6 @@ suggestions.
 ## Known limitations / next steps
 
 - Token-expiry warning is shown in-app only — no email/push reminder when a connection is about to expire.
-- No multi-tenant rate limiting against Meta's API limits.
 - No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
 - Uploaded images are stored on local disk under `public/uploads/` — fine for a single server, but move to object storage (S3-compatible) before scaling to multiple app servers.
+- No automated tests yet.
