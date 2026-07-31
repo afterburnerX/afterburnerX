@@ -40,11 +40,11 @@ class MediaUploader
         }
 
         $mime = (string) mime_content_type($file['tmp_name']);
-        if (!isset(self::ALLOWED_MIME_TO_EXT[$mime])) {
+        $extension = self::allowedExtensionForMime($mime);
+        if ($extension === null) {
             throw new RuntimeException('Unsupported image type. Use JPEG, PNG, or WEBP.');
         }
 
-        $extension = self::ALLOWED_MIME_TO_EXT[$mime];
         $filename = bin2hex(random_bytes(16)) . '.' . $extension;
 
         $uploadDir = BASE_PATH . '/public/uploads';
@@ -58,6 +58,11 @@ class MediaUploader
         }
 
         return self::publicBaseUrl() . '/uploads/' . $filename;
+    }
+
+    public static function allowedExtensionForMime(string $mime): ?string
+    {
+        return self::ALLOWED_MIME_TO_EXT[$mime] ?? null;
     }
 
     private static function publicBaseUrl(): string

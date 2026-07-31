@@ -11,6 +11,11 @@ class PostRepository
 
     private const BACKOFF_SECONDS = [1 => 120, 2 => 300, 3 => 900, 4 => 1800, 5 => 3600];
 
+    public static function backoffSecondsForAttempt(int $attempt): int
+    {
+        return self::BACKOFF_SECONDS[$attempt] ?? 3600;
+    }
+
     public static function schedule(
         int $userId,
         int $pageId,
@@ -93,7 +98,7 @@ class PostRepository
             return;
         }
 
-        $delay = self::BACKOFF_SECONDS[$attempts] ?? 3600;
+        $delay = self::backoffSecondsForAttempt($attempts);
 
         $db = Database::connection();
         $stmt = $db->prepare(

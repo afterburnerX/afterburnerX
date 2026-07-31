@@ -99,9 +99,25 @@ database/schema.sql       MySQL schema
 (`ANTHROPIC_API_KEY`) and stores each response so users can browse past
 suggestions.
 
+## Running tests
+
+```bash
+php tests/run.php
+```
+
+No PHPUnit/Composer required, on purpose — this project has no runtime
+dependencies so it can drop onto plain shared hosting, and pulling in a
+dev-only dependency tree just for tests didn't seem worth breaking that.
+`tests/run.php` is a ~70-line runner; test cases live in `tests/cases/*.php`
+as `test('name', function () { ... });` blocks using `assertSame()` /
+`assertTrue()` / `assertFalse()` / `assertNull()`. Coverage today is the
+pure logic that's cheap to isolate (CSRF tokens, rate-limit
+classification, retry backoff schedule, upload MIME validation) — nothing
+that needs a real database or live Facebook/Claude credentials.
+
 ## Known limitations / next steps
 
 - Token-expiry warning is shown in-app only — no email/push reminder when a connection is about to expire.
 - No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
 - Uploaded images are stored on local disk under `public/uploads/` — fine for a single server, but move to object storage (S3-compatible) before scaling to multiple app servers.
-- No automated tests yet.
+- Test coverage is limited to pure logic — no integration tests against a real (or in-memory) database yet.

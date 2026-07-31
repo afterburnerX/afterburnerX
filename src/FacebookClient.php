@@ -195,9 +195,8 @@ class FacebookClient
         if (is_array($decoded) && isset($decoded['error'])) {
             $err = $decoded['error'];
             $message = $err['message'] ?? 'Unknown Facebook API error';
-            $code = $err['code'] ?? null;
 
-            if (!empty($err['is_transient']) || in_array($code, self::RATE_LIMIT_CODES, true)) {
+            if (self::isTransientError($err)) {
                 throw new TransientApiException('Facebook API rate limit: ' . $message);
             }
 
@@ -205,5 +204,23 @@ class FacebookClient
         }
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * True if a Graph API error object represents a rate limit or other
+     * transient condition worth retrying, rather than a permanent failure
+     * (bad params, missing permissions, etc).
+     */
+    public static function isTransientError(?array $error): bool
+    {
+        if (!$error) {
+            return false;
+        }
+
+        if (!empty($error['is_transient'])) {
+            return true;
+        }
+
+        return in_array($error['code'] ?? null, self::RATE_LIMIT_CODES, true);
     }
 }
