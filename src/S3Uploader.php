@@ -27,7 +27,7 @@ class S3Uploader
             throw new RuntimeException('S3 storage is not fully configured (S3_ENDPOINT/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY).');
         }
 
-        $host = (string) parse_url($endpoint, PHP_URL_HOST);
+        $host = self::hostHeaderFor($endpoint);
         $usePathStyle = self::truthy(env('S3_PATH_STYLE'));
 
         $url = $usePathStyle
@@ -99,6 +99,27 @@ class S3Uploader
         $publicBase = env('S3_PUBLIC_URL_BASE');
 
         return $publicBase ? rtrim($publicBase, '/') . '/' . $key : $url;
+    }
+
+    /**
+     * The Host header value for an endpoint, including the port when it
+     * isn't the scheme default. SigV4 signs the Host header, so dropping
+     * a non-default port (e.g. a MinIO endpoint on :9000) would sign a
+     * host that doesn't match the connection and fail verification.
+     */
+    public static function hostHeaderFor(string $endpoint): string
+    {
+        $host = (string) parse_url($endpoint, PHP_URL_HOST);
+        $port = parse_url($endpoint, PHP_URL_PORT);
+        $scheme = strtolower((string) parse_url($endpoint, PHP_URL_SCHEME));
+
+        $isDefaultPort = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+
+        if ($port === null || $isDefaultPort) {
+            return $host;
+        }
+
+        return "{$host}:{$port}";
     }
 
     /**

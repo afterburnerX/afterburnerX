@@ -34,6 +34,11 @@ class Mailer
         return (string) preg_replace('/^\./m', '..', $body);
     }
 
+    private static function truthy(?string $value): bool
+    {
+        return $value !== null && !in_array(strtolower($value), ['', '0', 'false', 'no'], true);
+    }
+
     private static function fromAddress(): string
     {
         $configured = env('MAIL_FROM');
@@ -68,8 +73,27 @@ class Mailer
         $from = self::fromAddress();
         $timeout = 15;
 
+        // Verifying the server's TLS certificate is the secure default; the
+        // escape hatch exists for relays behind a private/internal CA, not
+        // to be routinely disabled.
+        $verifyPeer = self::truthy(env('SMTP_VERIFY_PEER', 'true'));
+        $context = stream_context_create([
+            'ssl' => [
+                'verify_peer' => $verifyPeer,
+                'verify_peer_name' => $verifyPeer,
+                'allow_self_signed' => !$verifyPeer,
+            ],
+        ]);
+
         $transport = $encryption === 'ssl' ? 'ssl://' : '';
-        $socket = @stream_socket_client("{$transport}{$host}:{$port}", $errno, $errstr, $timeout);
+        $socket = @stream_socket_client(
+            "{$transport}{$host}:{$port}",
+            $errno,
+            $errstr,
+            $timeout,
+            STREAM_CLIENT_CONNECT,
+            $context
+        );
         if (!$socket) {
             error_log("Mailer: SMTP connect to {$host}:{$port} failed: {$errstr} ({$errno})");
             return false;
@@ -121,8 +145,12 @@ class Mailer
             if (!$expectCode($response, [220])) {
                 return $fail('STARTTLS', $response);
             }
-            if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
-                return $fail('TLS negotiation', 'stream_socket_enable_crypto returned false');
+            // Silenced because a failed handshake (e.g. an untrusted
+            // certificate) raises a warning we already report ourselves
+            // via $fail() with the underlying OpenSSL reason.
+            if (!@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                $reason = error_get_last()['message'] ?? 'TLS handshake failed';
+                return $fail('TLS negotiation', $reason);
             }
             $write("EHLO {$localHost}");
             $response = $read();

@@ -16,3 +16,9 @@ test('dotStuff() leaves a body with no leading dots untouched', function () {
     $body = "Hi there,\n\nJust a normal message.\n\n- AfterburnerX";
     assertSame($body, Mailer::dotStuff($body));
 });
+
+test('dotStuff() escapes a lone dot line, which would otherwise end DATA early', function () {
+    // A bare "." line is the end-of-message marker: unescaped, everything
+    // after it would be interpreted as SMTP commands rather than body.
+    assertSame("before\n..\nafter", Mailer::dotStuff("before\n.\nafter"));
+});
