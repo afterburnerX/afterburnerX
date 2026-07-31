@@ -35,7 +35,12 @@ class Auth
             return false;
         }
 
-        session_regenerate_id(true);
+        // Guards against session fixation. Only meaningful when a session
+        // is actually running - under CLI there is none to regenerate.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+
         $_SESSION['user_id'] = (int) $user['id'];
 
         return true;
@@ -44,7 +49,10 @@ class Auth
     public static function logout(): void
     {
         $_SESSION = [];
-        session_destroy();
+
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_destroy();
+        }
     }
 
     public static function id(): ?int

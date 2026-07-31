@@ -2,18 +2,23 @@
 /**
  * Zero-dependency test runner (no Composer/PHPUnit) - keeps the project
  * installable on plain shared hosting without pulling in dev tooling.
- * Run with: php tests/run.php
+ *
+ * Unit tests:        php tests/run.php
+ * With integration:  TEST_DB_NAME=afterburnerx_test php tests/run.php
+ *
+ * Integration tests are skipped (not failed) when TEST_DB_NAME is unset.
  */
 
 declare(strict_types=1);
 
 require __DIR__ . '/../config/bootstrap.php';
+require __DIR__ . '/integration_bootstrap.php';
 
 $GLOBALS['__tests'] = [];
 
 function test(string $name, callable $fn): void
 {
-    $GLOBALS['__tests'][] = [$name, $fn];
+    $GLOBALS['__tests'][] = [$name, $fn, 'unit'];
 }
 
 function assertSame($expected, $actual, string $message = ''): void
@@ -53,9 +58,30 @@ foreach (glob(__DIR__ . '/cases/*.php') as $file) {
     require $file;
 }
 
-$failures = 0;
+$hasDb = integration_db_available();
 
-foreach ($GLOBALS['__tests'] as [$name, $fn]) {
+if ($hasDb) {
+    integration_db_setup();
+}
+
+// Always registered so they can be reported as skipped rather than
+// silently vanishing when no test database is configured.
+foreach (glob(__DIR__ . '/cases_integration/*.php') as $file) {
+    require $file;
+}
+
+$failures = 0;
+$skipped = 0;
+
+foreach ($GLOBALS['__tests'] as [$name, $fn, $kind]) {
+    if ($kind === 'integration') {
+        if (!$hasDb) {
+            $skipped++;
+            continue;
+        }
+        integration_db_reset();
+    }
+
     try {
         $fn();
         echo "  PASS  {$name}\n";
@@ -66,8 +92,12 @@ foreach ($GLOBALS['__tests'] as [$name, $fn]) {
     }
 }
 
-$total = count($GLOBALS['__tests']);
+$total = count($GLOBALS['__tests']) - $skipped;
 $passed = $total - $failures;
 echo "\n{$passed}/{$total} passed.\n";
+
+if ($skipped > 0) {
+    echo "{$skipped} integration test(s) skipped — set TEST_DB_NAME=<something>_test to run them.\n";
+}
 
 exit($failures > 0 ? 1 : 0);

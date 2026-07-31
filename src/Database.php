@@ -36,4 +36,14 @@ class Database
 
         return self::$instance;
     }
+
+    /**
+     * Replaces the connection the repositories use. Exists so the
+     * integration tests can point them at a throwaway test database;
+     * production code never calls this.
+     */
+    public static function useConnection(?PDO $pdo): void
+    {
+        self::$instance = $pdo;
+    }
 }
