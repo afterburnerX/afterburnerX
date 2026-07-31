@@ -85,7 +85,8 @@ database/schema.sql       MySQL schema
 
 - **Immediate**: `compose.php` calls `PostPublisher::publish()` synchronously and shows success/failure right away.
 - **Scheduled**: the same row is written with `status = 'pending'` and a future `scheduled_at`; `cron/run_scheduler.php` polls every minute for due rows and calls the same `PostPublisher::publish()`.
-- **Instagram**: always a two-step Graph API call — create a media container from an image URL, then publish it. Only image URLs are supported (no local file upload in this MVP); host images somewhere publicly reachable and paste the URL.
+- **Instagram**: always a two-step Graph API call — create a media container from an image URL, then publish it. The Graph API needs a URL it can fetch, so `compose.php` accepts either an uploaded image (saved under `public/uploads/`, served back as a public URL) or a pasted image URL. Set `APP_URL` in `.env` if the app runs behind a proxy/load balancer so uploaded-file URLs are built correctly.
+- **Token health**: the dashboard warns when the connected Facebook account's long-lived token is within 7 days of expiring (or already expired) and links to reconnect. There's still no automatic refresh — Meta doesn't issue one — so this is a manual "click to reconnect" flow, not silent renewal.
 
 ## AI suggestions
 
@@ -95,7 +96,7 @@ suggestions.
 
 ## Known limitations / next steps
 
-- No image upload — Instagram/Facebook photo posts take a public URL, not a file.
-- No token-refresh reminders/emails when a connection is about to expire.
+- Token-expiry warning is shown in-app only — no email/push reminder when a connection is about to expire.
 - No multi-tenant rate limiting against Meta's API limits.
 - No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
+- Uploaded images are stored on local disk under `public/uploads/` — fine for a single server, but move to object storage (S3-compatible) before scaling to multiple app servers.

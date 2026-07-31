@@ -10,6 +10,17 @@ $user = Auth::user();
 $pages = SocialAccountRepository::pagesForUser(Auth::id());
 $connected = isset($_GET['connected']);
 $oauthError = $_GET['error'] ?? null;
+
+$tokenExpiresAt = SocialAccountRepository::facebookTokenExpiresAt(Auth::id());
+$tokenWarning = null;
+if ($tokenExpiresAt) {
+    $daysLeft = (int) floor((strtotime($tokenExpiresAt) - time()) / 86400);
+    if ($daysLeft < 0) {
+        $tokenWarning = 'Your Facebook connection has expired. Reconnect to keep posting.';
+    } elseif ($daysLeft <= 7) {
+        $tokenWarning = "Your Facebook connection expires in {$daysLeft} day(s). Reconnect soon to avoid interrupted posting.";
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -29,6 +40,12 @@ $oauthError = $_GET['error'] ?? null;
   <?php endif; ?>
   <?php if ($oauthError): ?>
     <p class="alert"><?= htmlspecialchars($oauthError) ?></p>
+  <?php endif; ?>
+  <?php if ($tokenWarning): ?>
+    <p class="alert">
+      <?= htmlspecialchars($tokenWarning) ?>
+      <a href="/facebook-connect.php">Reconnect now</a>.
+    </p>
   <?php endif; ?>
 
   <section class="card">

@@ -6,6 +6,7 @@ use App\Csrf;
 use App\SocialAccountRepository;
 use App\PostRepository;
 use App\PostPublisher;
+use App\MediaUploader;
 
 Auth::requireLogin();
 
@@ -26,9 +27,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $when = $_POST['when'] ?? 'now';
         $scheduledAtInput = $_POST['scheduled_at'] ?? '';
 
+        $uploadedFile = $_FILES['media_file'] ?? null;
+        if ($uploadedFile && ($uploadedFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            try {
+                $mediaUrl = MediaUploader::store($uploadedFile);
+            } catch (\Throwable $e) {
+                $error = $e->getMessage();
+            }
+        }
+
         $page = SocialAccountRepository::findPage($userId, $pageId);
 
-        if (!$page) {
+        if ($error) {
+            // uploaded file failed validation, keep that error
+        } elseif (!$page) {
             $error = 'Please choose a valid connected page.';
         } elseif ($message === '' && !$mediaUrl) {
             $error = 'Add a message or an image URL.';
@@ -88,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <p>Connect a Facebook Page first.</p>
     <a class="btn" href="/facebook-connect.php">Connect Facebook</a>
   <?php else: ?>
-    <form method="post" class="card">
+    <form method="post" class="card" enctype="multipart/form-data">
       <?= Csrf::field() ?>
       <label>Page
         <select name="page_id" required>
@@ -106,7 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <label>Message
         <textarea name="message" rows="4"></textarea>
       </label>
-      <label>Image URL <span class="muted">(required for Instagram)</span>
+      <label>Upload Image <span class="muted">(JPEG/PNG/WEBP, max 8MB — required for Instagram)</span>
+        <input type="file" name="media_file" accept="image/jpeg,image/png,image/webp">
+      </label>
+      <label>...or Image URL <span class="muted">(used only if no file is uploaded)</span>
         <input type="url" name="media_url" placeholder="https://example.com/image.jpg">
       </label>
       <label>Link <span class="muted">(Facebook only, optional)</span>

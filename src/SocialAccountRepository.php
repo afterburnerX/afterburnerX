@@ -79,4 +79,16 @@ class SocialAccountRepository
 
         return $page ?: null;
     }
+
+    public static function facebookTokenExpiresAt(int $userId): ?string
+    {
+        $db = Database::connection();
+        $stmt = $db->prepare(
+            'SELECT token_expires_at FROM social_accounts WHERE user_id = ? AND provider = "facebook"'
+        );
+        $stmt->execute([$userId]);
+        $expiresAt = $stmt->fetchColumn();
+
+        return $expiresAt ?: null;
+    }
 }
