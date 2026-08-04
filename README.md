@@ -68,6 +68,20 @@ database/schema.sql                 MySQL schema
 2. Add the **Facebook Login** product. Under its settings, add your exact
    callback URL to **Valid OAuth Redirect URIs**:
    `https://yourdomain.com/facebook-callback.php`
+
+   Then, under **Settings → Basic**, fill in the four URLs Meta requires
+   before it will review the app — all four are implemented here:
+
+   | Field | URL |
+   |---|---|
+   | Privacy Policy URL | `https://yourdomain.com/privacy.php` |
+   | Terms of Service URL | `https://yourdomain.com/terms.php` |
+   | Data Deletion Request URL | `https://yourdomain.com/data-deletion.php` |
+   | Deauthorize Callback URL | `https://yourdomain.com/deauthorize.php` |
+
+   Set `COMPANY_NAME`, `COMPANY_CONTACT_EMAIL`, and `COMPANY_ADDRESS` in
+   `.env` or the legal pages render visible `[set COMPANY_… in .env]`
+   placeholders and a warning banner.
 3. Add the **Instagram** product if you want IG publishing (Instagram
    posting works through a Facebook Page's linked Instagram Business
    Account — there's no separate IG-only login in this app).
@@ -100,6 +114,39 @@ database/schema.sql                 MySQL schema
 - **Token health**: the dashboard warns when the connected Facebook account's long-lived token is within 7 days of expiring (or already expired) and links to reconnect. There's still no automatic refresh — Meta doesn't issue one — so this is a manual "click to reconnect" flow, not silent renewal.
 - **Cancel**: pending scheduled posts can be canceled from `posts.php` any time before they publish.
 - **Rate limits**: `FacebookClient` treats Graph API rate-limit errors (codes 4/17/32/613, or `is_transient`) and network blips as retryable — 2 quick in-process retries first, then the post is left `pending` with an exponential backoff (2m → 5m → 15m → 30m → 60m) so the cron worker retries it automatically, up to `PostRepository::MAX_ATTEMPTS` (6) before it's marked permanently failed. An immediate "post now" that hits a rate limit falls back to this same queued retry instead of just failing.
+
+## Data deletion, deauthorize, and legal pages
+
+Meta requires all of these before App Review, so they're built in.
+
+- **`/data-deletion.php`** — Meta POSTs a `signed_request`; the app verifies
+  it against the app secret, deletes that user's Facebook-derived data, and
+  responds with the `{"url": …, "confirmation_code": …}` JSON Meta expects.
+- **`/deletion-status.php?code=…`** — the public status page Meta links the
+  user to, showing whether that request completed.
+- **`/deauthorize.php`** — fires when a user removes the app from Facebook;
+  drops their now-useless tokens so the scheduler stops trying to use them.
+- **`/privacy.php`** and **`/terms.php`** — the required legal pages, linked
+  from the site footer.
+
+**Deletion scope** (deliberate, and stated in the privacy policy): a Facebook
+deletion request removes the connection, tokens, Pages, linked Instagram
+accounts, and posts scheduled to those Pages. It keeps the AfterburnerX
+account itself and the AI suggestion history, because those aren't data
+obtained from Meta. Users who want everything gone can use **Delete my
+account** on the dashboard, which requires typing their email to confirm and
+removes every row belonging to them.
+
+Verifying the `signed_request` signature is what makes these endpoints safe —
+without it anyone who knew the URL could delete arbitrary users' data. Both
+callbacks reject forged and tampered requests; that's covered by unit tests
+and was confirmed over real HTTP.
+
+> **The legal pages are a starting template, not legal advice.** The
+> data-handling sections accurately describe what this code does, but have a
+> lawyer review the whole thing — especially if you have users in the EU/UK
+> (GDPR) or California (CCPA), which impose obligations this template does
+> not attempt to cover.
 
 ## AI suggestions
 
@@ -187,9 +234,9 @@ blocks using `assertSame()` / `assertTrue()` / `assertFalse()` / `assertNull()`.
   against a real MySQL database loaded from `database/schema.sql`,
   covering the scheduler's due/backoff/give-up transitions, the
   cross-user ownership guards on cancel and page lookup, the
-  reconnect-upsert behavior, and the reminder dedupe/re-arm logic. They
-  are **skipped** unless `TEST_DB_NAME` is set, so the unit suite still
-  runs anywhere.
+  reconnect-upsert behavior, the reminder dedupe/re-arm logic, and the
+  data-deletion scope and cascades. They are **skipped** unless
+  `TEST_DB_NAME` is set, so the unit suite still runs anywhere.
 
   Safety: the test database is dropped and recreated on every run, so
   `TEST_DB_NAME` is required to end in `_test` — the runner refuses
@@ -200,6 +247,17 @@ need real credentials.
 
 ## Known limitations / next steps
 
+Roughly in the order I'd tackle them:
+
+- **Access tokens are stored in plaintext** (`social_accounts.access_token`,
+  `pages.page_access_token`). Anyone with a database dump can post as every
+  connected business. Encrypting them at rest is the highest-value hardening
+  left.
+- **No password reset.** Users will lock themselves out; `App\Mailer` already
+  exists, so this is cheap to add.
+- **No login rate limiting** — passwords are brute-forceable.
+- No editing a scheduled post (cancel and recreate instead).
+- Image + text only: no carousels, video, Reels, or Stories.
 - No queue/worker beyond a once-a-minute cron poll (fine at small scale; move to a real queue if volume grows).
 - The web layer (`public/*.php`) has no automated coverage — the repositories underneath it do. Form handling and redirects have only been checked by hand.
 - `App\Mailer` implements `AUTH LOGIN` only, not `AUTH PLAIN`; and neither it nor `App\S3Uploader` has been run against a real provider — see the notes under "Email reminders" and "Upload storage".

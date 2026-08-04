@@ -59,6 +59,18 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   INDEX idx_due (status, scheduled_at, next_attempt_at)
 ) ENGINE=InnoDB;
 
+-- Meta requires a data deletion callback plus a status URL the user can
+-- visit to confirm the deletion happened; the confirmation code is what
+-- ties those together.
+CREATE TABLE IF NOT EXISTS deletion_requests (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  confirmation_code VARCHAR(64) NOT NULL UNIQUE,
+  fb_user_id VARCHAR(64) NOT NULL,
+  status ENUM('completed','nothing_to_delete') NOT NULL DEFAULT 'completed',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_fb_user (fb_user_id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS ai_suggestions (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id INT UNSIGNED NOT NULL,
