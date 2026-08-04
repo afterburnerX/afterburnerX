@@ -20,7 +20,7 @@ class SocialAccountRepository
         $stmt->execute([
             'user_id' => $userId,
             'fb_user_id' => $fbUserId,
-            'access_token' => $accessToken,
+            'access_token' => Crypto::encrypt($accessToken),
             'expires_at' => $expiresAt,
         ]);
 
@@ -46,7 +46,7 @@ class SocialAccountRepository
                 'social_account_id' => $socialAccountId,
                 'page_id' => $page['id'],
                 'page_name' => $page['name'],
-                'page_access_token' => $page['access_token'],
+                'page_access_token' => Crypto::encrypt((string) $page['access_token']),
                 'ig_user_id' => $ig['id'] ?? null,
                 'ig_username' => $ig['username'] ?? null,
             ]);
@@ -63,7 +63,7 @@ class SocialAccountRepository
         );
         $stmt->execute([$userId]);
 
-        return $stmt->fetchAll();
+        return array_map([self::class, 'decryptPageToken'], $stmt->fetchAll());
     }
 
     public static function findPage(int $userId, int $pageId): ?array
@@ -77,7 +77,20 @@ class SocialAccountRepository
         $stmt->execute([$userId, $pageId]);
         $page = $stmt->fetch();
 
-        return $page ?: null;
+        return $page ? self::decryptPageToken($page) : null;
+    }
+
+    /**
+     * Callers expect a usable token, so rows are decrypted on the way out
+     * of the repository rather than at each use site.
+     */
+    public static function decryptPageToken(array $page): array
+    {
+        if (isset($page['page_access_token'])) {
+            $page['page_access_token'] = Crypto::decrypt((string) $page['page_access_token']);
+        }
+
+        return $page;
     }
 
     public static function facebookUserId(int $userId): ?string

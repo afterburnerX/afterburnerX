@@ -24,6 +24,8 @@ src/                                Application classes (App\ namespace)
 public/                             Web root — point your vhost/docroot here
 cron/run_scheduler.php              Publishes due scheduled posts (run every minute)
 cron/send_expiry_reminders.php      Emails users with an expiring Facebook connection (run daily)
+tools/generate-key.php              Prints a new APP_ENCRYPTION_KEY
+tools/encrypt-existing-tokens.php   Encrypts tokens stored before encryption was enabled
 database/schema.sql                 MySQL schema
 ```
 
@@ -42,9 +44,13 @@ database/schema.sql                 MySQL schema
 2. **Config**
    ```bash
    cp .env.example .env
+   php tools/generate-key.php   # append the output to .env
    ```
-   Fill in `DB_*`, `FB_APP_ID`, `FB_APP_SECRET`, `FB_REDIRECT_URI`, and
-   `ANTHROPIC_API_KEY`.
+   Fill in `DB_*`, `FB_APP_ID`, `FB_APP_SECRET`, `FB_REDIRECT_URI`,
+   `ANTHROPIC_API_KEY`, and `APP_ENCRYPTION_KEY`.
+
+   **Back up `APP_ENCRYPTION_KEY`.** It encrypts the stored Facebook
+   access tokens; lose it and every user has to reconnect their account.
 
 3. **Web server document root** → point it at `public/`. If your host
    can't change the docroot, the root `.htaccess` denies direct access to
@@ -114,6 +120,41 @@ database/schema.sql                 MySQL schema
 - **Token health**: the dashboard warns when the connected Facebook account's long-lived token is within 7 days of expiring (or already expired) and links to reconnect. There's still no automatic refresh — Meta doesn't issue one — so this is a manual "click to reconnect" flow, not silent renewal.
 - **Cancel**: pending scheduled posts can be canceled from `posts.php` any time before they publish.
 - **Rate limits**: `FacebookClient` treats Graph API rate-limit errors (codes 4/17/32/613, or `is_transient`) and network blips as retryable — 2 quick in-process retries first, then the post is left `pending` with an exponential backoff (2m → 5m → 15m → 30m → 60m) so the cron worker retries it automatically, up to `PostRepository::MAX_ATTEMPTS` (6) before it's marked permanently failed. An immediate "post now" that hits a rate limit falls back to this same queued retry instead of just failing.
+
+## Token encryption at rest
+
+Facebook user and Page access tokens are posting credentials for every
+connected business, so they're encrypted in the database with
+XChaCha20-Poly1305 via libsodium (bundled with PHP — no new dependency).
+Encryption is authenticated, so a tampered value fails loudly instead of
+decrypting to garbage.
+
+Stored values look like `enc:v1:<base64 nonce||ciphertext>`. Each write
+uses a fresh random nonce, so identical tokens don't produce identical
+ciphertext. Encryption and decryption happen inside the repositories, so
+callers (`compose.php`, the scheduler) just get a usable token.
+
+**Upgrading an existing install:**
+
+```bash
+php tools/generate-key.php                        # add the output to .env
+php tools/encrypt-existing-tokens.php --dry-run   # see what would change
+php tools/encrypt-existing-tokens.php             # encrypt in place
+```
+
+The migration is idempotent — already-encrypted rows are skipped, so an
+interrupted run can simply be re-run. Rows written before encryption was
+enabled keep working untouched (the `enc:v1:` prefix is what distinguishes
+them), so the app doesn't break between setting the key and running the
+migration.
+
+If `APP_ENCRYPTION_KEY` is unset the app still runs and stores tokens in
+plaintext — deliberately, so an upgrade doesn't take a live site down —
+but the dashboard shows a warning with the exact commands to fix it.
+
+> Losing the key means the tokens cannot be decrypted. There is no
+> recovery path other than every user reconnecting their Facebook account.
+> Back it up somewhere other than the server's `.env`.
 
 ## Data deletion, deauthorize, and legal pages
 
@@ -249,12 +290,11 @@ need real credentials.
 
 Roughly in the order I'd tackle them:
 
-- **Access tokens are stored in plaintext** (`social_accounts.access_token`,
-  `pages.page_access_token`). Anyone with a database dump can post as every
-  connected business. Encrypting them at rest is the highest-value hardening
-  left.
 - **No password reset.** Users will lock themselves out; `App\Mailer` already
   exists, so this is cheap to add.
+- **No key rotation tooling.** Changing `APP_ENCRYPTION_KEY` currently means
+  re-encrypting by hand; the `enc:v1:` prefix leaves room for a versioned
+  rotation script.
 - **No login rate limiting** — passwords are brute-forceable.
 - No editing a scheduled post (cancel and recreate instead).
 - Image + text only: no carousels, video, Reels, or Stories.

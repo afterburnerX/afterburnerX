@@ -64,7 +64,12 @@ class PostRepository
         );
         $stmt->execute();
 
-        return $stmt->fetchAll();
+        // The scheduler hands these straight to PostPublisher, which needs
+        // a usable token.
+        return array_map(
+            [SocialAccountRepository::class, 'decryptPageToken'],
+            $stmt->fetchAll()
+        );
     }
 
     public static function markPosted(int $id, string $remotePostId): void

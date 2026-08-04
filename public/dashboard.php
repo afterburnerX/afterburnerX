@@ -2,6 +2,7 @@
 require __DIR__ . '/../config/bootstrap.php';
 
 use App\Auth;
+use App\Crypto;
 use App\Csrf;
 use App\SocialAccountRepository;
 
@@ -48,6 +49,15 @@ if ($tokenExpiresAt) {
   <?php endif; ?>
   <?php if ($oauthError): ?>
     <p class="alert"><?= htmlspecialchars($oauthError) ?></p>
+  <?php endif; ?>
+  <?php if ($pages && !Crypto::isConfigured()): ?>
+    <p class="alert">
+      <strong>Access tokens are being stored unencrypted.</strong>
+      Anyone with a copy of the database could post to your connected accounts.
+      Set <code>APP_ENCRYPTION_KEY</code> in <code>.env</code>
+      (<code>php tools/generate-key.php</code>), then run
+      <code>php tools/encrypt-existing-tokens.php</code>.
+    </p>
   <?php endif; ?>
   <?php if ($tokenWarning): ?>
     <p class="alert">

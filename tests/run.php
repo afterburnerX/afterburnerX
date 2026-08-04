@@ -14,6 +14,13 @@ declare(strict_types=1);
 require __DIR__ . '/../config/bootstrap.php';
 require __DIR__ . '/integration_bootstrap.php';
 
+// Run the suite the way a correctly-configured install runs: with token
+// encryption on. Individual tests override this to cover the
+// unconfigured and wrong-key paths.
+if (getenv('APP_ENCRYPTION_KEY') === false || getenv('APP_ENCRYPTION_KEY') === '') {
+    putenv('APP_ENCRYPTION_KEY=' . base64_encode(random_bytes(32)));
+}
+
 $GLOBALS['__tests'] = [];
 
 function test(string $name, callable $fn): void
